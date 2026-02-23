@@ -1,7 +1,9 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useRef, useState } from 'react';
+import { FlatList, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+
 
 type Message = {
   id: string;
@@ -15,35 +17,96 @@ export default function ChatScreen() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
- 
+  const handleNewChat = () => {
+  setMessages([]);
+};
+ const flatListRef = useRef<FlatList>(null);
 const hasMessages = messages.length > 0;
-  const handleSubmit = () => {
+const [isLoading, setIsLoading] = useState(false);
+const insets = useSafeAreaInsets();
+const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+useEffect(() => {
+  const showSub = Keyboard.addListener("keyboardDidShow", () => setKeyboardOpen(true));
+  const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardOpen(false));
+
+  return () => {
+    showSub.remove();
+    hideSub.remove();
+  };
+}, []);
+
+const handleSubmit = async () => {
   if (!input.trim()) return;
 
-  const newMessage: Message = {
+  Keyboard.dismiss(); // 👈 closes keyboard immediately
+
+  const userMessage: Message = {
     id: Date.now().toString(),
-    role: 'user',
+    role: "user",
     content: input,
   };
 
-  setMessages(prev => [...prev, newMessage]);
+  setMessages(prev => [...prev, userMessage]);
 
-  setInput(''); // 🔥 clears input
+  const currentInput = input;
+  setInput("");
+  setIsLoading(true);
+  try {
+    const response = await fetch("http://192.168.0.19:5000/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          ...messages,
+          { role: "user", content: currentInput },
+        ],
+      }),
+    });
+
+    const data = await response.json();
+
+    const assistantMessage: Message = {
+      id: Date.now().toString(),
+      role: "assistant",
+      content: data.content,
+    };
+
+    setMessages(prev => [...prev, assistantMessage]);
+    setIsLoading(false);
+
+  } catch (err) {
+    console.error("Chat error:", err);
+  }
 };
-
+useEffect(() => {
+  flatListRef.current?.scrollToEnd({ animated: true });
+}, [messages]);
   return (
     <KeyboardAvoidingView
   style={{ flex: 1 }}
   behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+  keyboardVerticalOffset={0}
 >
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
 {/* Header */}
       <View style={styles.header}>
-  <Ionicons name="menu" size={26} color="#fff" />
-  <Text style={styles.heading}>Ask AI</Text>
-  <View style={{ width: 26 }} /> 
+  
+  {/* Left side */}
+  <View style={{ flexDirection: "row", alignItems: "center" }}>
+    <Ionicons name="menu" size={26} color="#fff" />
+    <Text style={styles.heading}>Ask AI </Text>
+  </View>
+
+  {/* Right side */}
+  <TouchableOpacity onPress={handleNewChat} style={{ padding: 6 }}>
+    <Ionicons name="create-outline" size={24} color="#fff" />
+  </TouchableOpacity>
+
 </View>
-  <View style={styles.content}>
+ <View style={styles.content}>
   {messages.length === 0 ? (
     <View style={styles.emptyState}>
       <Ionicons 
@@ -63,29 +126,39 @@ const hasMessages = messages.length > 0;
       </Text>
     </View>
   ) : (
-    <View style={{ flex: 1 }}>
-      <View style={{ flex: 1, paddingHorizontal: 16 }}>
-  {messages.map((msg) => (
-    <View
-      key={msg.id}
-      style={[
-        styles.bubble,
-        msg.role === 'user'
-          ? styles.userBubble
-          : styles.assistantBubble,
-      ]}
-    >
-      <Text style={styles.bubbleText}>
-        {msg.content}
+    <FlatList
+  ref={flatListRef}
+  data={isLoading ? [...messages, { id: "typing", role: "assistant", content: "..." }] : messages}
+  keyExtractor={(item) => item.id}
+  contentContainerStyle={{
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 20,
+  }}
+renderItem={({ item }) => {
+  if (item.role === "user") {
+    return (
+      <View style={[styles.bubble, styles.userBubble]}>
+        <Text style={styles.bubbleText}>{item.content}</Text>
+      </View>
+    );
+  }
+
+  // Assistant message (no bubble)
+  return (
+    <View style={styles.assistantContainer}>
+      <Text style={styles.assistantText}>
+        {item.content}
       </Text>
     </View>
-  ))}
-</View>
-    </View>
+  );
+}}
+/>
   )}
 </View>
 
-<View style={styles.inputContainer}>
+<View style={[styles.inputContainer, { paddingBottom: keyboardOpen ? 15: insets.bottom + 13 }]}>
+  
   <View style={styles.inputBar}>
     
     {/* Left Plus Button */}
@@ -99,6 +172,7 @@ const hasMessages = messages.length > 0;
   onChangeText={setInput}
   placeholder="Ask anything"
   placeholderTextColor="#8E8E93"
+  multiline
   style={styles.textInput}
   onSubmitEditing={handleSubmit}
 />
@@ -132,7 +206,7 @@ const styles = StyleSheet.create({
   header: {
   flexDirection: 'row',
   alignItems: 'center',
-
+  justifyContent: 'space-between', // 👈 THIS is key
   paddingHorizontal: 16,
   paddingTop: 16,
   paddingBottom: 12,
@@ -151,7 +225,7 @@ icon: {
     flex: 1,
     justifyContent: 'center',
     
-    paddingHorizontal: 24,
+    paddingHorizontal: 0,
   },
   emptyState: {
     alignItems: 'center',
@@ -170,7 +244,7 @@ icon: {
   },
   inputContainer: {
   paddingHorizontal: 16,
-  paddingBottom: 10,
+  
 },
 
 inputBar: {
@@ -228,6 +302,16 @@ assistantBubble: {
 bubbleText: {
   color: '#fff',
   fontSize: 16,
+},
+assistantContainer: {
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+},
+
+assistantText: {
+  color: "#fff",
+  fontSize: 16,
+  lineHeight: 22,
 },
 
 });
