@@ -52,34 +52,31 @@ const handleSubmit = async () => {
   const currentInput = input;
   setInput("");
   setIsLoading(true);
-  try {
-    const response = await fetch("http://192.168.0.19:5000/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [
-          ...messages,
-          { role: "user", content: currentInput },
-        ],
-      }),
-    });
+ try {
+  const response = await fetch("http://192.168.0.19:5000/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: currentInput,   // 🔥 only send raw message now
+    }),
+  });
 
-    const data = await response.json();
+  const data = await response.json();
 
-    const assistantMessage: Message = {
-      id: Date.now().toString(),
-      role: "assistant",
-      content: data.content,
-    };
+  const assistantMessage: Message = {
+    id: Date.now().toString(),
+    role: "assistant",
+    content: data.content,   // backend returns { mode, content }
+  };
 
-    setMessages(prev => [...prev, assistantMessage]);
-    setIsLoading(false);
+  setMessages(prev => [...prev, assistantMessage]);
+  setIsLoading(false);
 
-  } catch (err) {
-    console.error("Chat error:", err);
-  }
+} catch (err) {
+  console.error("Chat error:", err);
+}
 };
 useEffect(() => {
   flatListRef.current?.scrollToEnd({ animated: true });
